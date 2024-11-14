@@ -436,6 +436,7 @@ public class RestaurantReservationSystem {
                 updateButton.setEnabled(true);
                 cancelButton.setEnabled(true);
                 reservationHistoryButton.setEnabled(true);
+                removeWaitlistButton.setEnabled(false);
                 showMessage("Reservation found. You can now update the details.");
                 rs.close();
             } else {
