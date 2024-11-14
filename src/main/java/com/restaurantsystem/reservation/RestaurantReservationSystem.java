@@ -28,6 +28,8 @@ public class RestaurantReservationSystem {
     private JButton updateButton;
     private JButton cancelButton;
     private JButton reservationHistoryButton;
+    private JButton removeWaitlistButton;
+    
     private int currentReservationId = -1;
 
     public RestaurantReservationSystem() {
@@ -143,6 +145,12 @@ public class RestaurantReservationSystem {
             }
         });
         
+        gbc.gridx = 0; gbc.gridy = 12; gbc.gridwidth = 1;
+        removeWaitlistButton = new JButton("Remove Waitlist");
+        removeWaitlistButton.setEnabled(false); // Initially disabled
+        removeWaitlistButton.addActionListener(e -> removeFromWaitlist());
+        frame.add(removeWaitlistButton, gbc);
+
 
         populateTimeOptions();
         setDefaultTimeSlot();
@@ -170,6 +178,15 @@ public class RestaurantReservationSystem {
                     "password TEXT NOT NULL" +
                     ")";
             stmt.execute(sql);
+            sql= "CREATE TABLE IF NOT EXISTS waitlist ("+
+            	    "id INTEGER PRIMARY KEY AUTOINCREMENT,"+
+            	    "name TEXT NOT NULL,"+
+            	    "phone TEXT NOT NULL,"+
+            	    "guests INTEGER NOT NULL,"+
+            	    "position INTEGER NOT NULL,"+
+            	    "added_time DATETIME DEFAULT CURRENT_TIMESTAMP)";
+            	stmt.execute(sql);
+
         } catch (SQLException e) {
             System.out.println(e.getMessage());
         }
@@ -290,9 +307,25 @@ public class RestaurantReservationSystem {
 
             // Check if the time is booked
             if (bookedTimes.contains(timeString)) {
-                timeButton.setEnabled(false);
-                timeButton.setText("Reserved");
-                timeButton.setBackground(Color.RED); // Highlight reserved slots in red
+            	timeButton.setEnabled(true);
+            	timeButton.setText("Waitlist");
+            	timeButton.setBackground(Color.RED); // Highlight reserved slots in red
+            	
+            	timeButton.addActionListener(new ActionListener() {
+                    public void actionPerformed(ActionEvent e) {
+                        int response = JOptionPane.showConfirmDialog(frame, 
+                            "This time slot is fully booked. Would you like to join the waitlist?", 
+                            "Join Waitlist", JOptionPane.YES_NO_OPTION);
+
+                        if (response == JOptionPane.YES_OPTION) {
+                        	// Assuming a method to get the number of guests
+                            
+                            joinWaitlist();
+                            JOptionPane.showMessageDialog(frame, "You've been added to the waitlist for " + timeString);
+                        }
+                    }
+                });
+            	
             } else if (isToday && slotTime.before(now)) {
                 // If it's today and the slot is in the past, disable and gray out the button
                 timeButton.setEnabled(false);
@@ -399,17 +432,33 @@ public class RestaurantReservationSystem {
                 dateChooser.setDate(new SimpleDateFormat("yyyy-MM-dd").parse(rs.getString("reservation_date")));
                 specialRequestsArea.setText(rs.getString("specialRequests"));
                 selectedTimeLabel.setText(rs.getString("reservation_time"));
-                
-                //String reservedTime = rs.getString("time");
-                //availableTimeSlots.add(reservedTime);//
-                
                 // Enable the update button
                 updateButton.setEnabled(true);
                 cancelButton.setEnabled(true);
                 reservationHistoryButton.setEnabled(true);
+                removeWaitlistButton.setEnabled(false);
                 showMessage("Reservation found. You can now update the details.");
+                rs.close();
             } else {
-                showMessage("No reservation found with the provided name and phone number.");
+            	//String phone = phoneField.getText();
+            	sql = "SELECT position FROM waitlist WHERE name = ? AND phone = ?";
+                try (PreparedStatement waitlistPstmt = conn.prepareStatement(sql)) {
+                    waitlistPstmt.setString(1, name);
+                    waitlistPstmt.setString(2, phone);
+                    ResultSet waitlistRs = waitlistPstmt.executeQuery();
+
+                    if (waitlistRs.next()) {
+                        int position = waitlistRs.getInt("position");
+                        JOptionPane.showMessageDialog(frame, "Your waitlist position is: " + position);
+                        removeWaitlistButton.setEnabled(true);
+                    } else {
+                        JOptionPane.showMessageDialog(frame, "No waitlist entry found with that phone number.");
+                    }
+
+                    // Close the waitlist ResultSet
+                    waitlistRs.close();}
+                
+            	//showMessage("No reservation found with the provided name and phone number.");
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -507,46 +556,8 @@ public class RestaurantReservationSystem {
     }
    
     
-    // Manager can view all the reservations
-    private void viewReservations() {
-        JDialog reservationsDialog = new JDialog(frame, "Reservations", true);
-        reservationsDialog.setSize(500, 400);
-        reservationsDialog.setLayout(new GridLayout(0, 1));
-
-        String sql = "SELECT * FROM reservations";
-
-        try (Connection conn = DriverManager.getConnection(DB_URL);
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-            while (rs.next()) {
-                int reservationId = rs.getInt("id");
-                String name = rs.getString("name");
-                String phone = rs.getString("phone");
-                String date = rs.getString("reservation_date");
-                String time = rs.getString("reservation_time");
-                int guests = rs.getInt("guests");
-
-                JPanel reservationPanel = new JPanel(new FlowLayout());
-                reservationPanel.add(new JLabel("ID: " + reservationId + ", Name: " + name +
-                        ", Phone: " + phone +
-                        ", Date: " + date +
-                        ", Time: " + time +
-                        ", Guests: " + guests));
-                JButton editButton = new JButton("Edit");
-              
-                reservationPanel.add(editButton);
-                reservationsDialog.add(reservationPanel);
-            }
-            reservationsDialog.setVisible(true);
-        } catch (SQLException e) {
-            System.out.println(e.getMessage());
-            JOptionPane.showMessageDialog(frame, "Error fetching reservations.");
-        }
-    }
-    
-    
     //Updates the reservation by customer
-    private void cancelReservation(/*int reservationId, String name, String phone, String guests, String date, String time*/) {
+    private void cancelReservation() {
     	String name = customerNameField.getText();
         String phone = phoneField.getText();
     	String sql = "DELETE FROM reservations WHERE name = ? AND phone = ?";
@@ -563,6 +574,63 @@ public class RestaurantReservationSystem {
         }
     }
     
+    //waitlist Management
+    
+    
+    private void joinWaitlist() {
+    	String name = customerNameField.getText();
+    	String phone = phoneField.getText();
+    	String guests = guestCountField.getText();
+    	String sql = "INSERT INTO waitlist (name, phone, guests, position) VALUES (?, ?, ?, " +
+                     "(SELECT IFNULL(MAX(position), 0) + 1 FROM waitlist))";
+        try (Connection conn = DriverManager.getConnection(DB_URL);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, name);
+            pstmt.setString(2, phone);
+            pstmt.setInt(3, Integer.parseInt(guests));
+            pstmt.executeUpdate();
+            JOptionPane.showMessageDialog(frame, "Added to waitlist successfully!");
+            //viewWaitlistButton.setEnabled(true);
+            removeWaitlistButton.setEnabled(true);
+            //resetWaitlistButton();
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+            JOptionPane.showMessageDialog(frame, "Error adding to waitlist.");
+        }
+    }
+
+    private void removeFromWaitlist() {
+    	String phone = phoneField.getText();
+        String sql = "DELETE FROM waitlist WHERE phone = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, phone);
+            int rowsAffected = pstmt.executeUpdate();
+            if (rowsAffected > 0) {
+                JOptionPane.showMessageDialog(frame, "Removed from waitlist successfully!");
+                //viewWaitlistButton.setEnabled(false);
+                removeWaitlistButton.setEnabled(false);
+                updateWaitlistPositions(); // Adjust positions after removal
+            } else {
+                JOptionPane.showMessageDialog(frame, "No entry found with that phone number.");
+            }
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+            JOptionPane.showMessageDialog(frame, "Error removing from waitlist.");
+        }
+    }
+    
+    private void updateWaitlistPositions() {
+        String sql = "UPDATE waitlist SET position = position - 1 WHERE position > ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL);
+             Statement stmt = conn.createStatement()) {
+            stmt.executeUpdate(sql);
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+    }
+    
+   
     //Main Method
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> new RestaurantReservationSystem());
