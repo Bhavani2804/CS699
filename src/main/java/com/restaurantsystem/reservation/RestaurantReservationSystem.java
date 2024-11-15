@@ -29,6 +29,7 @@ public class RestaurantReservationSystem {
     private JButton cancelButton;
     private JButton reservationHistoryButton;
     private JButton removeWaitlistButton;
+    private JButton managerLoginButton;
     
     private int currentReservationId = -1;
 
@@ -150,8 +151,17 @@ public class RestaurantReservationSystem {
         removeWaitlistButton.setEnabled(false); // Initially disabled
         removeWaitlistButton.addActionListener(e -> removeFromWaitlist());
         frame.add(removeWaitlistButton, gbc);
-
-
+        
+     // Inside your main UI class
+        gbc.gridx = 1;gbc.gridy = 12;gbc.gridwidth = 1;
+        managerLoginButton = new JButton("Manager Login");
+        managerLoginButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                openManagerLoginDialog();
+            }
+        });
+        frame.add(managerLoginButton, gbc);
+       
         populateTimeOptions();
         setDefaultTimeSlot();
         frame.setVisible(true);
@@ -452,7 +462,7 @@ public class RestaurantReservationSystem {
                         JOptionPane.showMessageDialog(frame, "Your waitlist position is: " + position);
                         removeWaitlistButton.setEnabled(true);
                     } else {
-                        JOptionPane.showMessageDialog(frame, "No waitlist entry found with that phone number.");
+                        JOptionPane.showMessageDialog(frame, "No Reservation Found");
                     }
 
                     // Close the waitlist ResultSet
@@ -556,7 +566,7 @@ public class RestaurantReservationSystem {
     }
    
     
-    //Updates the reservation by customer
+    //Cancel the reservation by customer
     private void cancelReservation() {
     	String name = customerNameField.getText();
         String phone = phoneField.getText();
@@ -574,7 +584,24 @@ public class RestaurantReservationSystem {
         }
     }
     
-    //waitlist Management
+    private void cancelReservation(String phoneNumber) {
+        String sql = "DELETE FROM reservations WHERE phone = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, phoneNumber);
+            int rowsAffected = pstmt.executeUpdate();
+            if (rowsAffected > 0) {
+                JOptionPane.showMessageDialog(null, "Reservation cancelled successfully.");
+            } else {
+                JOptionPane.showMessageDialog(null, "No reservation found with that phone number.");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(null, "Error canceling reservation.");
+        }
+    }
+    
+    //Join wait list Management
     
     
     private void joinWaitlist() {
@@ -598,7 +625,9 @@ public class RestaurantReservationSystem {
             JOptionPane.showMessageDialog(frame, "Error adding to waitlist.");
         }
     }
-
+    
+    //Remove Wait list
+    
     private void removeFromWaitlist() {
     	String phone = phoneField.getText();
         String sql = "DELETE FROM waitlist WHERE phone = ?";
@@ -620,6 +649,24 @@ public class RestaurantReservationSystem {
         }
     }
     
+    private void removeFromWaitlist(String phoneNumber) {
+        String sql = "DELETE FROM waitlist WHERE phone = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, phoneNumber);
+            int rowsAffected = pstmt.executeUpdate();
+            if (rowsAffected > 0) {
+                JOptionPane.showMessageDialog(null, "Removed from waitlist successfully.");
+            } else {
+                JOptionPane.showMessageDialog(null, "No entry found with that phone number.");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(null, "Error removing from waitlist.");
+        }
+    }
+    
+    //Update Wait list
     private void updateWaitlistPositions() {
         String sql = "UPDATE waitlist SET position = position - 1 WHERE position > ?";
         try (Connection conn = DriverManager.getConnection(DB_URL);
@@ -630,7 +677,209 @@ public class RestaurantReservationSystem {
         }
     }
     
-   
+    //Manager Dialog
+    private void openManagerLoginDialog() {
+        JDialog loginDialog = new JDialog((Frame) null, "Manager Login", true);
+        loginDialog.setSize(300, 200);
+        loginDialog.setLayout(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+
+        JLabel userLabel = new JLabel("Username:");
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        loginDialog.add(userLabel, gbc);
+
+        JTextField userField = new JTextField(15);
+        gbc.gridx = 1;
+        gbc.gridy = 0;
+        loginDialog.add(userField, gbc);
+
+        JLabel passLabel = new JLabel("Password:");
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        loginDialog.add(passLabel, gbc);
+
+        JPasswordField passField = new JPasswordField(15);
+        gbc.gridx = 1;
+        gbc.gridy = 1;
+        loginDialog.add(passField, gbc);
+
+        JButton loginButton = new JButton("Login");
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        gbc.gridwidth = 2;
+        loginDialog.add(loginButton, gbc);
+
+        loginButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                String username = userField.getText();
+                String password = passField.getText();
+                if (authenticateManager(username, password)) {
+                    loginDialog.dispose();
+                    openManagerDashboard();
+                } else {
+                    JOptionPane.showMessageDialog(loginDialog, "Invalid credentials", "Login Error", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
+
+        loginDialog.setLocationRelativeTo(null);
+        loginDialog.setVisible(true);
+    }
+
+    private boolean authenticateManager(String username, String password) {
+        String sql = "SELECT * FROM managers WHERE login_id = ? AND password = ?";
+        
+        try (Connection conn = DriverManager.getConnection(DB_URL);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, username);
+            pstmt.setString(2, password);
+            ResultSet rs = pstmt.executeQuery();
+            
+            if (rs.next()) {
+                // If a match is found, return true for successful authentication
+                return true;
+            } else {
+                // No match found, return false for failed authentication
+                return false;
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(frame, "Error during authentication.");
+            return false;
+        }
+    }
+
+    
+    private void openManagerDashboard() {
+        JDialog managerDashboard = new JDialog((Frame) null, "Manager Dashboard", true);
+        managerDashboard.setSize(300, 100);
+        managerDashboard.setLayout(new BorderLayout());
+
+        /*JTextArea infoArea = new JTextArea("Manager functionalities will be displayed here...");
+        infoArea.setEditable(false);*/
+        //managerDashboard.add(infoArea, BorderLayout.CENTER);
+        JPanel buttonPanel = new JPanel();
+        buttonPanel.setLayout(new GridLayout(2, 2, 10, 10));
+
+        // Button for managing the wait list
+        JButton manageWaitlistButton = new JButton("Manage Waitlist");
+        manageWaitlistButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                openWaitlistManagement();
+            }
+        });
+        
+        // Button for managing reservations
+        JButton manageReservationsButton = new JButton("Manage Reservations");
+        manageReservationsButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+               openReservationManagement();
+            }
+        });
+
+        // Add buttons to panel
+        buttonPanel.add(manageWaitlistButton);
+        buttonPanel.add(manageReservationsButton);
+
+        managerDashboard.add(buttonPanel, BorderLayout.SOUTH);
+
+        managerDashboard.setLocationRelativeTo(null);
+        managerDashboard.setVisible(true);
+    }
+
+    
+    private void openWaitlistManagement() {
+        JDialog waitlistDialog = new JDialog((Frame) null, "Manage Waitlist", true);
+        waitlistDialog.setSize(400, 300);
+        waitlistDialog.setLayout(new BorderLayout());
+
+        JTextArea waitlistInfoArea = new JTextArea();
+        waitlistInfoArea.setEditable(false);
+        /*waitlistInfoArea.setText("Waitlist Information...\n");*/
+
+        // Fetch and display wait list from the database
+        String sql = "SELECT * FROM waitlist ORDER BY position";
+        try (Connection conn = DriverManager.getConnection(DB_URL);
+             PreparedStatement pstmt = conn.prepareStatement(sql);
+             ResultSet rs = pstmt.executeQuery()) {
+            while (rs.next()) {
+                String name = rs.getString("name");
+                String phone = rs.getString("phone");
+                int position = rs.getInt("position");
+                waitlistInfoArea.append("Position: " + position + ", Name: " + name + ", Phone: " + phone + "\n");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(waitlistDialog, "Error retrieving waitlist.");
+        }
+        waitlistDialog.add(waitlistInfoArea, BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel();
+        JButton removeFromWaitlistButton = new JButton("Remove from Waitlist");
+        removeFromWaitlistButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                String phoneNumber = JOptionPane.showInputDialog(waitlistDialog, "Enter phone number to remove from waitlist:");
+                removeFromWaitlist(phoneNumber);
+            }
+        });
+        buttonPanel.add(removeFromWaitlistButton);
+        waitlistDialog.add(buttonPanel, BorderLayout.SOUTH);
+
+        waitlistDialog.setLocationRelativeTo(null);
+        waitlistDialog.setVisible(true);
+    }
+
+    private void openReservationManagement() {
+        JDialog reservationDialog = new JDialog((Frame) null, "Manage Reservations", true);
+        reservationDialog.setSize(400, 300);
+        reservationDialog.setLayout(new BorderLayout());
+
+        JTextArea reservationInfoArea = new JTextArea();
+        reservationInfoArea.setEditable(false);
+        /*reservationInfoArea.setText("Current Reservations...\n");*/
+
+        // Fetch and display reservations from the database
+        String sql = "SELECT * FROM reservations ORDER BY reservation_date, reservation_time";
+        try (Connection conn = DriverManager.getConnection(DB_URL);
+             PreparedStatement pstmt = conn.prepareStatement(sql);
+             ResultSet rs = pstmt.executeQuery()) {
+            while (rs.next()) {
+                String name = rs.getString("name");
+                String phone = rs.getString("phone");
+                String date = rs.getString("reservation_date");
+                String time = rs.getString("reservation_time");
+                reservationInfoArea.append("Name: " + name + ", Phone: " + phone + ", Date: " + date + ", Time: " + time + "\n");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(reservationDialog, "Error retrieving reservations.");
+        }
+
+        reservationDialog.add(reservationInfoArea, BorderLayout.CENTER);
+        
+        JPanel buttonPanel = new JPanel();
+        JButton cancelReservationButton = new JButton("Cancel Reservation");
+        cancelReservationButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                String phoneNumber = JOptionPane.showInputDialog(reservationDialog, "Enter phone number to cancel reservation:");
+                cancelReservation(phoneNumber);
+            }
+        });
+        buttonPanel.add(cancelReservationButton);
+        reservationDialog.add(buttonPanel, BorderLayout.SOUTH);
+
+        reservationDialog.setLocationRelativeTo(null);
+        reservationDialog.setVisible(true);
+    }
+    
+    
     //Main Method
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> new RestaurantReservationSystem());
