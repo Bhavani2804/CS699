@@ -7,6 +7,8 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.sql.*;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
@@ -437,6 +439,25 @@ public class RestaurantReservationSystem {
             ResultSet rs = pstmt.executeQuery();
 
             if (rs.next()) {
+            	    // Retrieve reservation details
+            	    currentReservationId = rs.getInt("id");
+            	    String reservationDate = rs.getString("reservation_date");
+            	    //String reservationTime = rs.getString("reservation_time");
+            	    //String specialRequests = rs.getString("specialRequests");
+
+            	    // Parse reservation date and time into a single DateTime object
+            	    LocalDate reservationDateTime = LocalDate.parse(reservationDate);
+
+            	    // Get the current date and time
+            	    LocalDate currentDateTime = LocalDate.now();
+
+            	    // Check if the reservation is in the past
+            	    if (reservationDateTime.isBefore(currentDateTime)) {
+            	        showMessage("No upcoming reservations found. You can check your reservation history.");
+            	        reservationHistoryButton.setEnabled(true);
+            	        rs.close();
+            	        return; // Exit the method since it's a past reservation
+            	    }
                 currentReservationId = rs.getInt("id");
                 guestCountField.setText(String.valueOf(rs.getInt("guests")));
                 dateChooser.setDate(new SimpleDateFormat("yyyy-MM-dd").parse(rs.getString("reservation_date")));
@@ -478,16 +499,19 @@ public class RestaurantReservationSystem {
     
     // View Reservation history
     private void viewReservationHistory() {
+    	String name = customerNameField.getText();
+        String phone = phoneField.getText();
         String sql = "SELECT id, name, phone, guests, reservation_date, reservation_time " +
-                     "FROM reservations WHERE CONCAT(reservation_date, ' ', reservation_time) < datetime('2024-11-15')";
+                     "FROM reservations WHERE name = ? AND phone = ? AND datetime(reservation_date) < datetime('now')";
         try (Connection conn = DriverManager.getConnection(DB_URL);
-             PreparedStatement pstmt = conn.prepareStatement(sql);
-             ResultSet rs = pstmt.executeQuery()) {
+             PreparedStatement pstmt = conn.prepareStatement(sql)){
+        		pstmt.setString(1, name); // Replace 'customerName' with the actual name variable
+        	    pstmt.setString(2, phone);
+             try(ResultSet rs = pstmt.executeQuery()) {
 
             // Table column headers
             String[] columnNames = {"ID", "Name", "Phone", "Guests", "Date", "Time"};
             ArrayList<String[]> data = new ArrayList<>();
-
             // Fetch data for past reservations only
             while (rs.next()) {
                 String[] row = {
@@ -511,7 +535,7 @@ public class RestaurantReservationSystem {
             // Show the table in a dialog
             JOptionPane.showMessageDialog(frame, scrollPane, "Reservation History", JOptionPane.INFORMATION_MESSAGE);
 
-        } catch (SQLException e) {
+        }} catch (SQLException e) {
             System.out.println(e.getMessage());
             JOptionPane.showMessageDialog(frame, "Error retrieving reservation history.");
         }
